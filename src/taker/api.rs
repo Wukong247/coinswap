@@ -76,12 +76,14 @@ pub(crate) const TCP_TIMEOUT_SECONDS: u64 = 300;
 /// SwapParams govern the criteria to find suitable set of makers from the offerbook.
 ///
 /// If no maker matches with a given SwapParam, that coinswap round will fail.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct SwapParams {
     /// Total Amount to Swap.
     pub send_amount: Amount,
     /// How many hops.
     pub maker_count: usize,
+    /// User selected UTXOs
+    pub manually_selected_outpoints: Option<Vec<OutPoint>>,
 }
 
 // Defines the Taker's position in the current ongoing swap.
@@ -328,7 +330,7 @@ impl Taker {
     ///
     /// If that fails too. Open an issue at [our github](https://github.com/citadel-tech/coinswap/issues)
     pub(crate) fn send_coinswap(&mut self, swap_params: SwapParams) -> Result<(), TakerError> {
-        self.ongoing_swap_state.swap_params = swap_params;
+        self.ongoing_swap_state.swap_params = swap_params.clone();
 
         // Check if we have enough balance - try regular first, then swap
         let balances = self.wallet.get_balances()?;
@@ -352,6 +354,7 @@ impl Taker {
             log::error!("Not enough balance to do swap : {err:?}");
             return Err(err.into());
         }
+
         log::info!("Syncing Offerbook");
         self.sync_offerbook()?;
 
@@ -387,7 +390,6 @@ impl Taker {
         log::info!("Initiating coinswap with id : {unique_id}");
 
         self.ongoing_swap_state.active_preimage = preimage;
-        self.ongoing_swap_state.swap_params = swap_params;
         self.ongoing_swap_state.id = unique_id;
 
         // Try first hop. Abort if error happens.
@@ -545,7 +547,7 @@ impl Taker {
                 generate_maker_keys(&maker.offer.tweakable_point, 1)?;
             let (funding_txs, mut outgoing_swapcoins, funding_fee) =
                 self.wallet.initalize_coinswap(
-                    self.ongoing_swap_state.swap_params.send_amount,
+                    &self.ongoing_swap_state.swap_params,
                     &multisig_pubkeys,
                     &hashlock_pubkeys,
                     self.get_preimage_hash(),
@@ -2116,6 +2118,7 @@ impl Taker {
                 let min_size_with_fee = bitcoin::Amount::from_sat(
                     oa.offer.min_size + maker_fee + 500, /* Estimated mining fee */
                 );
+                log::info!("Maker Filtering : Target Amount: {swap_amount}, Minimum Amount: {min_size_with_fee}, Maximum Amount: {}", bitcoin::Amount::from_sat(oa.offer.max_size));
                 swap_amount >= min_size_with_fee
                     && swap_amount <= bitcoin::Amount::from_sat(oa.offer.max_size)
             })

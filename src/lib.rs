@@ -1,5 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
+#![allow(rustdoc::private_intra_doc_links)]
+#![allow(rustdoc::broken_intra_doc_links)]
 extern crate bitcoin;
 extern crate bitcoind;
 
