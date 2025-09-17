@@ -394,7 +394,6 @@ impl Maker {
                 &SwapParams {
                     send_amount: Amount::from_sat(outgoing_amount),
                     maker_count: 0,
-                    tx_count: 0,
                     manually_selected_outpoints: None,
                 },
                 &message

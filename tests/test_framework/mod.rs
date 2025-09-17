@@ -41,6 +41,7 @@ use std::{
     thread::{self, JoinHandle},
     time::Duration,
 };
+use tokio::sync::mpsc::{self, Sender};
 
 use flate2::read::GzDecoder;
 use tar::Archive;
@@ -556,6 +557,7 @@ pub struct TestFramework {
     pub(super) bitcoind: BitcoinD,
     temp_dir: PathBuf,
     shutdown: AtomicBool,
+    tracker_shutdown: Sender<()>,
 }
 
 impl TestFramework {
@@ -589,10 +591,12 @@ impl TestFramework {
         let bitcoind = init_bitcoind(&temp_dir);
 
         let shutdown = AtomicBool::new(false);
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
         let test_framework = Arc::new(Self {
             bitcoind,
             temp_dir: temp_dir.clone(),
             shutdown,
+            tracker_shutdown: shutdown_tx,
         });
 
         log::info!("🌐 Initiating Directory Server .....");
@@ -613,8 +617,11 @@ impl TestFramework {
                 datadir: temp_dir_clone.to_string_lossy().to_string(),
             };
 
-            tracker_rt.block_on(async {
-                tracker::start(tracker_config).await;
+            tracker_rt.block_on(async move {
+                tokio::select! {
+                    _ = tracker::start(tracker_config) => {},
+                    _ = shutdown_rx.recv() => {},
+                }
             });
         });
 
@@ -707,6 +714,7 @@ impl TestFramework {
         self.shutdown.store(true, Relaxed);
         // stop bitcoind
         let _ = self.bitcoind.client.stop().unwrap();
+        _ = self.tracker_shutdown.send(());
     }
 }
 
